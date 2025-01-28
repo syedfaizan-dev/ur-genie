@@ -10,6 +10,8 @@ import { TbLoader2 } from "react-icons/tb";
 import RequirementDocument from "./RequirementDocument";
 import MessageBubble from "../common/MessageBubble";
 import { IoSend } from "react-icons/io5";
+import Input from "../common/Input";
+import Button from "../common/Button";
 
 const ProjectRequirementsManager = () => {
   const { projectPrompt } = useProjectPromptContext();
@@ -17,6 +19,7 @@ const ProjectRequirementsManager = () => {
   const [userPrompt, setUserPrompt] = useState(projectPrompt);
   const [document, setDocument] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [canStop, setCanStop] = useState(false);
   const [isRemainderModal, setIsReminderModal] = useState(false);
   const { isFetching, error, fetchResponse } = useOpenApi();
   const firstRender = useRef(true);
@@ -48,6 +51,16 @@ const ProjectRequirementsManager = () => {
 
     const response = await fetchResponse(updatedPrompt); // Use the updated prompt
     if (response) {
+      const parsedResponse = JSON.parse(response)
+      if (!canStop) {
+        if (typeof parsedResponse.canStop === "string") {
+          parsedResponse.canStop = parsedResponse.canStop.toLowerCase() === "true";
+        }
+        setCanStop(parsedResponse.canStop)
+        if (parsedResponse.canStop) {
+          setIsReminderModal(true)
+        }
+      }
       setPrompt((prevPrompt) => [
         ...prevPrompt,
         { role: "assistant", content: response }
@@ -89,7 +102,7 @@ const ProjectRequirementsManager = () => {
               ]
             }
           ]
-        }` 
+        }`
       }
     ]); // Use the updated prompt
     if (response) {
@@ -103,34 +116,13 @@ const ProjectRequirementsManager = () => {
     }
   }
 
-  const handleStop = async () => {
-    const weightageresponse = await fetchResponse([
-      ...prompt,
-      {
-        role: "user", content: `you will check our previous conversation and based on user responses you will note down all the requirements user want for the project
-          and then set the weightage based on how much specific requirements it has or it is more high level. the weightage will be zero if there is no requirement in 
-          the coversation from user and just random talk. the weightage will be high if it is very detailed and specific and the weightage will be low if it is more high level. 
-        and you will send that weightage only. your response will only a number between 0-100 nothing else not even full stop just a number. `}
-    ])
-    try {
-      const weightage = Number(weightageresponse)
-      if (weightage < 50) {
-        setIsReminderModal(true)
-      } else {
-        handleGenerateDocument()
-      }
-    } catch (e) {
-      console.error(e)
-    }
-  };
-
   const handleChange = (e) => {
     setUserPrompt(e.target.value);
   };
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <div className=" flex-1 p-10 w-1/2 flex flex-col">
+      <div className="flex-1 p-10 flex flex-col">
         {/* header */}
         <div className="h-20 flex items-center bg-purple-800 text-white rounded-t-lg shadow-lg p-3">
           <img
@@ -147,9 +139,14 @@ const ProjectRequirementsManager = () => {
         >
           {prompt
             .filter((msg) => msg.role !== "system")
-            .map((msg, index) => (
-              <MessageBubble message={msg.content} role={msg.role} key={index}/>
-            ))}
+            .map((msg, index) => {
+              if (msg.role === "assistant") {
+                const content = JSON.parse(msg.content)
+                return <MessageBubble message={content.text} role={msg.role} key={index} />
+              }
+              return <MessageBubble message={msg.content} role={msg.role} key={index} />
+
+            })}
           {isFetching && (
             <div className="text-gray-500 text-sm self-start">Genie is thinking...</div>
           )}
@@ -166,34 +163,35 @@ const ProjectRequirementsManager = () => {
         {/* input */}
         <div className="p-4 bg-white rounded-b-lg">
           <div className="flex gap-2">
-            <input
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleSend();
-                }
-              }}
-              type="text"
-              value={userPrompt}
-              onChange={handleChange}
-              placeholder="Type your message..."
-              className="flex-1 border border-gray-600 rounded-lg py-1 px-2 focus:outline-none focus:ring-1 focus:ring-gray-500"
-            />
-            <button
+            <div className="flex-1">
+              <Input
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleSend();
+                  }
+                }}
+                type="text"
+                value={userPrompt}
+                onChange={handleChange}
+                placeholder="Type your message..."
+              />
+            </div>
+            <Button
               onClick={handleSend}
-              className="bg-purple-800 text-white px-4 py-2 rounded-lg hover:bg-purple-900 cursor-pointer"
+              variant="royal"
             >
-              <IoSend size={20}/>
-            </button>
-            <button
-              onClick={handleStop}
-              className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 cursor-pointer"
+              <IoSend size={24} />
+            </Button>
+            {canStop && <Button
+              onClick={handleGenerateDocument}
+              variant="danger"
             >
               Stop
-            </button>
+            </Button>}
           </div>
         </div>
       </div>
-      <div className="flex flex-1 items-center justify-center">
+      <div className="flex-1 flex items-center justify-center">
         <Lottie
           animationData={isFetching ? thinkingGenie : tellingGenie}
           loop={true}
@@ -212,25 +210,25 @@ const ProjectRequirementsManager = () => {
       </Modal>
       <Modal isOpen={isRemainderModal} onClose={() => setIsReminderModal(false)}>
         <div className="max-w-md  p-6 rounded-xl">
-          <h2 className="text-lg font-bold mb-4">Proceed with High-Level Requirements?</h2>
+          <h2 className="text-lg font-bold mb-4">Proceed with Document Generation?</h2>
           <p className="text-gray-600 mb-6">
-            Your requirements seem to be more high-level and lack detailed specifics.
-            Are you sure you want to proceed? Keep in mind that high-level requirements
-            might result in a project that doesn’t fully meet your expectations.
+            Your requirements are now sufficient to proceed with generating the project document.
+            You may stop chatting and generate the document at this point.
+            However, if you wish to refine or add further details, feel free to continue the conversation
           </p>
           <div className="flex justify-end gap-3">
-            <button
+            <Button
               onClick={() => { setIsReminderModal(false) }}
-              className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 cursor-pointer"
+              variant="danger"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={handleGenerateDocument}
-              className="bg-purple-800 text-white px-4 py-2 rounded-lg hover:bg-purple-900 cursor-pointer"
+              variant="forest"
             >
-              Proceed
-            </button>
+              Generate
+            </Button>
           </div>
         </div>
       </Modal>
